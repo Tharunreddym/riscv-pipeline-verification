@@ -1,0 +1,22 @@
+EDA Playground run options used for random regression:
+
++UVM_TESTNAME=random_instruction_test -sv_seed 1
++UVM_TESTNAME=random_instruction_test -sv_seed 2
++UVM_TESTNAME=random_instruction_test -sv_seed 3
++UVM_TESTNAME=random_instruction_test -sv_seed 4
++UVM_TESTNAME=random_instruction_test -sv_seed 5
++UVM_TESTNAME=random_instruction_test -sv_seed 6
++UVM_TESTNAME=random_instruction_test -sv_seed 7
++UVM_TESTNAME=random_instruction_test -sv_seed 8
++UVM_TESTNAME=random_instruction_test -sv_seed 9
++UVM_TESTNAME=random_instruction_test -sv_seed 10
++UVM_TESTNAME=random_instruction_test -sv_seed 11
++UVM_TESTNAME=random_instruction_test -sv_seed 12
++UVM_TESTNAME=random_instruction_test -sv_seed 13
++UVM_TESTNAME=random_instruction_test -sv_seed 14
++UVM_TESTNAME=random_instruction_test -sv_seed 15
++UVM_TESTNAME=random_instruction_test -sv_seed 16
++UVM_TESTNAME=random_instruction_test -sv_seed 17
++UVM_TESTNAME=random_instruction_test -sv_seed 18
++UVM_TESTNAME=random_instruction_test -sv_seed 19
++UVM_TESTNAME=random_instruction_test -sv_seed 20

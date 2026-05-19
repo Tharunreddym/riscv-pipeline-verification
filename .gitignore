@@ -1,0 +1,13 @@
+# Simulator outputs
+work/
+qrun.out/
+transcript
+*.wlf
+*.vcd
+*.log
+*.ucdb
+modelsim.ini
+
+# OS/editor
+.DS_Store
+.vscode/
