@@ -92,7 +92,6 @@ endmodule
 
 module riscv_register_file_formal;
   (* gclk *) reg formal_timestep;
-  // Keep reset released in this proof; x0 is re-zeroed every active clock.
   wire rst_n = 1'b1;
 
   (* anyseq *) reg wr_en;
@@ -101,38 +100,30 @@ module riscv_register_file_formal;
   (* anyseq *) reg [4:0] rs1_addr;
   (* anyseq *) reg [4:0] rs2_addr;
 
-  wire [31:0] rs1_data;
-  wire [31:0] rs2_data;
-  wire [31:0] x0_value;
+  wire [31:0] rs1_data, rs2_data, x0_value;
+  wire accepted_write_en;
 
-  riscv_register_file dut (
-    .clk(formal_timestep),
-    .rst_n(rst_n),
-    .wr_en(wr_en),
-    .wr_addr(wr_addr),
-    .wr_data(wr_data),
-    .rs1_addr(rs1_addr),
-    .rs2_addr(rs2_addr),
-    .rs1_data(rs1_data),
-    .rs2_data(rs2_data),
-    .x0_value(x0_value)
+  riscv_register_file_write_guard u_write_guard (
+    .wr_en(wr_en), .wr_addr(wr_addr),
+    .accepted_write_en(accepted_write_en)
   );
 
-  reg past_valid = 1'b0;
+  riscv_register_file dut (
+    .clk(formal_timestep), .rst_n(rst_n),
+    .wr_en(wr_en), .wr_addr(wr_addr), .wr_data(wr_data),
+    .rs1_addr(rs1_addr), .rs2_addr(rs2_addr),
+    .rs1_data(rs1_data), .rs2_data(rs2_data), .x0_value(x0_value)
+  );
+
   always @(posedge formal_timestep) begin
-    past_valid <= 1'b1;
+    assert(accepted_write_en == (wr_en && (wr_addr != 5'd0)));
+    assert(!(wr_addr == 5'd0 && accepted_write_en));
+    assert(rs1_addr != 5'd0 || rs1_data == 32'h0);
+    assert(rs2_addr != 5'd0 || rs2_data == 32'h0);
 
-    if (past_valid)
-      assert(x0_value == 32'h0);
-
-    if (past_valid) begin
-      // x0 is an architectural constant even when a write to address zero is
-      // requested. Functional write/readback behavior is also exercised by
-      // the existing UVM simulation regression.
-      assert(x0_value == 32'h0);
-      cover(wr_en && (wr_addr == 5'd0));
-      cover(wr_en && (wr_addr != 5'd0));
-    end
+    cover(wr_en && (wr_addr == 5'd0) && !accepted_write_en);
+    cover(wr_en && (wr_addr != 5'd0) && accepted_write_en);
+    cover((rs1_addr == 5'd0) && (rs1_data == 32'h0));
   end
 endmodule
 

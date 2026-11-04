@@ -43,7 +43,21 @@ module riscv_fetch_control_unit #(
 endmodule
 
 // -----------------------------------------------------------------------------
-// Architectural register file. x0 is hardwired to zero and cannot be written.
+// Architectural register-file write guard. The same guard is used by the
+// register-file sequential block and formally checked for x0 protection.
+// -----------------------------------------------------------------------------
+module riscv_register_file_write_guard #(
+  parameter integer ADDR_WIDTH = 5
+) (
+  input  logic                  wr_en,
+  input  logic [ADDR_WIDTH-1:0] wr_addr,
+  output logic                  accepted_write_en
+);
+  assign accepted_write_en = wr_en && (wr_addr != '0);
+endmodule
+
+// -----------------------------------------------------------------------------
+// Architectural register file. x0 reads are hardwired to zero.
 // This exact module is instantiated by riscv_pipeline and formally checked.
 // -----------------------------------------------------------------------------
 module riscv_register_file #(
@@ -62,14 +76,21 @@ module riscv_register_file #(
   output logic [DATA_WIDTH-1:0] x0_value
 );
   logic [DATA_WIDTH-1:0] regs [0:(1 << ADDR_WIDTH)-1];
+  logic accepted_write_en;
   integer rf_i;
+
+  riscv_register_file_write_guard #(.ADDR_WIDTH(ADDR_WIDTH)) u_write_guard (
+    .wr_en(wr_en),
+    .wr_addr(wr_addr),
+    .accepted_write_en(accepted_write_en)
+  );
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       for (rf_i = 0; rf_i < (1 << ADDR_WIDTH); rf_i = rf_i + 1)
         regs[rf_i] <= '0;
     end else begin
-      if (wr_en && (wr_addr != '0))
+      if (accepted_write_en)
         regs[wr_addr] <= wr_data;
       regs[0] <= '0;
     end
