@@ -15,6 +15,7 @@ module riscv_pipeline #(
 )(
   input  logic        clk,
   input  logic        rst_n,
+  input  logic        quiesce_req,
 
   input  logic        instr_load_en,
   input  logic [31:0] instr_load_addr,
@@ -36,7 +37,8 @@ module riscv_pipeline #(
   output logic [31:0] commit_mem_wdata,
 
   output logic [31:0] if_id_pc_dbg,
-  output logic [31:0] if_id_instr_dbg
+  output logic [31:0] if_id_instr_dbg,
+  output logic        pipeline_empty
 );
 
   localparam logic [31:0] NOP = 32'h0000_0013; // ADDI x0,x0,0
@@ -161,6 +163,8 @@ module riscv_pipeline #(
   assign pc_dbg = pc_q;
   assign if_id_pc_dbg = if_id_pc_q;
   assign if_id_instr_dbg = if_id_instr_q;
+  assign pipeline_empty = !(if_id_valid_q || id_ex_valid_q ||
+                             ex_mem_valid_q || mem_wb_valid_q);
 
   assign dec_opcode = if_id_instr_q[6:0];
   assign dec_rd     = if_id_instr_q[11:7];
@@ -286,9 +290,11 @@ module riscv_pipeline #(
       if_id_pc_d    = 32'h0;
       if_id_instr_d = NOP;
     end else if (!stall) begin
-      if_id_valid_d = 1'b1;
+      // Quiesce stops new fetches while allowing the current IF/ID entry
+      // to advance through the remaining pipeline stages.
+      if_id_valid_d = !quiesce_req;
       if_id_pc_d    = pc_q;
-      if_id_instr_d = instr_f;
+      if_id_instr_d = quiesce_req ? NOP : instr_f;
     end
   end
 

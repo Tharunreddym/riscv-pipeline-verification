@@ -980,6 +980,8 @@ module tb_top;
   riscv_pipeline dut (
     .clk              (clk),
     .rst_n            (rif.rst_n),
+    .quiesce_req      (1'b0),
+    .pipeline_empty   (),
     .instr_load_en    (rif.instr_load_en),
     .instr_load_addr  (rif.instr_load_addr),
     .instr_load_data  (rif.instr_load_data),

@@ -1,0 +1,26 @@
+name: Low-Power RTL Smoke Test
+
+on:
+  push:
+    paths:
+      - "eda_playground/design.sv"
+      - "eda_playground/testbench.sv"
+      - "low_power/**"
+      - ".github/workflows/low-power-smoke.yml"
+  pull_request:
+    paths:
+      - "eda_playground/design.sv"
+      - "low_power/**"
+  workflow_dispatch:
+
+jobs:
+  riscv-low-power:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+      - name: Run low-power integration test
+        run: make -C low_power test

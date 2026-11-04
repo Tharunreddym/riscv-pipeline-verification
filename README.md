@@ -260,3 +260,10 @@ The following work is a **future development plan**. It is not implemented in th
 ## Project takeaway
 
 This project provides a five-stage CPU datapath and control implementation, explicit forwarding and load-use interlock behavior, branch/jump redirect handling, a UVM-based verification environment, assertion checks, and recorded multi-seed regression evidence. The next milestone is a separately measured low-power CPU extension—not a claim that power optimization is already present.
+
+
+## Low-Power CPU Architecture Extension
+
+An integrated low-power wrapper is now available under low_power/. It adds RUN/DRAIN/IDLE/SLEEP/WAKEUP control, stops new instruction fetches during drain, waits for both pipeline and memory quiescence, and gates the CPU clock through a latch-based ICG model. The wrapper exposes retention-save/restore requests and a configurable wake-up interval.
+
+Run the self-checking integration test with make -C low_power test. This extension is additive; the original UVM baseline remains available. The ICG is a simulation model that must be replaced by a characterized library cell for implementation. No measured power reduction or silicon-level result is claimed.
