@@ -92,7 +92,8 @@ endmodule
 
 module riscv_register_file_formal;
   (* gclk *) reg formal_timestep;
-  (* anyseq *) reg rst_n;
+  // Keep reset released in this proof; x0 is re-zeroed every active clock.
+  wire rst_n = 1'b1;
 
   (* anyseq *) reg wr_en;
   (* anyseq *) reg [4:0] wr_addr;
@@ -119,14 +120,9 @@ module riscv_register_file_formal;
 
   reg past_valid = 1'b0;
   always @(posedge formal_timestep) begin
-    // Hold reset active on the first formal clock, then keep it released.
-    if (!past_valid)
-      assume(!rst_n);
-    else
-      assume(rst_n);
     past_valid <= 1'b1;
 
-    if (rst_n)
+    if (past_valid)
       assert(x0_value == 32'h0);
 
     if (past_valid && $past(rst_n)) begin
@@ -152,7 +148,8 @@ endmodule
 
 module riscv_data_memory_formal;
   (* gclk *) reg formal_timestep;
-  (* anyseq *) reg rst_n;
+  // Data contents are initialized in the memory module; writes are enabled.
+  wire rst_n = 1'b1;
 
   (* anyseq *) reg wr_en;
   (* anyseq *) reg [31:0] wr_addr;
@@ -172,11 +169,6 @@ module riscv_data_memory_formal;
 
   reg past_valid = 1'b0;
   always @(posedge formal_timestep) begin
-    // One reset cycle is followed by an always-released memory interface.
-    if (!past_valid)
-      assume(!rst_n);
-    else
-      assume(rst_n);
     past_valid <= 1'b1;
 
     // The harness proves the four implemented words and permits any byte
