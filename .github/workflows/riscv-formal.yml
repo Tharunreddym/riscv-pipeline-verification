@@ -1,0 +1,35 @@
+name: RISC-V Formal Verification
+
+on:
+  push:
+    paths:
+      - "eda_playground/design.sv"
+      - "formal/**"
+      - ".github/workflows/riscv-formal.yml"
+  pull_request:
+    paths:
+      - "eda_playground/design.sv"
+      - "formal/**"
+      - ".github/workflows/riscv-formal.yml"
+  workflow_dispatch:
+
+jobs:
+  formal-control-units:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OSS CAD Suite
+        uses: YosysHQ/setup-oss-cad-suite@v4
+      - name: Show formal tool versions
+        run: |
+          yosys -V
+          sby --version
+          boolector --version
+      - name: Prove load-use hazard logic
+        run: sby -f formal/riscv_hazard.sby prove
+      - name: Cover load-use hazard scenarios
+        run: sby -f formal/riscv_hazard.sby cover
+      - name: Prove forwarding priority
+        run: sby -f formal/riscv_forwarding.sby prove
+      - name: Cover forwarding scenarios
+        run: sby -f formal/riscv_forwarding.sby cover

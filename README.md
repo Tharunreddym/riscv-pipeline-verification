@@ -251,7 +251,7 @@ The ICG model must be replaced by a characterized library clock-gating cell for 
 - Internal word-oriented instruction/data memories; no external cache hierarchy or coherent interconnect.
 - The optional wrapper implements clock gating and power-state sequencing at the RTL control level; no power gating, DVFS, UPF domains, isolation cells, or retention cells are implemented.
 - No measured silicon power, characterized post-layout power, or quantified power reduction.
-- No documented synthesis/PPA, gate-level/SDF, formal-proof, or full-chip signoff result.
+- No full sequential formal proof of the complete CPU, synthesis/PPA, gate-level/SDF, or full-chip signoff result.
 - The public EDA Playground UVM testbench uses a SystemVerilog reference model; C++ DPI-C integration is not included in this repository snapshot.
 
 ## Project takeaway
@@ -264,3 +264,19 @@ This project provides a five-stage CPU datapath and control implementation, expl
 An integrated low-power wrapper is now available under low_power/. It adds RUN/DRAIN/IDLE/SLEEP/WAKEUP control, stops new instruction fetches during drain, waits for both pipeline and memory quiescence, and gates the CPU clock through a latch-based ICG model. The wrapper exposes retention-save/restore requests and a configurable wake-up interval.
 
 Run the self-checking integration test with make -C low_power test. This extension is additive; the original UVM baseline remains available. The ICG is a simulation model that must be replaced by a characterized library cell for implementation. No measured power reduction or silicon-level result is claimed.
+
+
+## Formal Verification Extension
+
+The `formal/` directory provides SymbiYosys checks for the same load-use hazard and forwarding units instantiated by the five-stage CPU RTL. Proof tasks check the combinational input space for source-dependency stall behavior, youngest-producer forwarding priority, x0 exclusion, and load-result forwarding eligibility. Separate cover tasks target key dependency and priority scenarios.
+
+Run locally with the OSS CAD Suite and Boolector:
+
+```bash
+sby -f formal/riscv_hazard.sby prove
+sby -f formal/riscv_hazard.sby cover
+sby -f formal/riscv_forwarding.sby prove
+sby -f formal/riscv_forwarding.sby cover
+```
+
+These are formal checks of the two combinational pipeline-control units. They are not a full sequential proof of the complete CPU, ISA compliance, or memory-system correctness. The existing UVM simulation regression remains a separate validation layer. GitHub Actions runs the proof and cover tasks on changes to the RTL or formal harness.

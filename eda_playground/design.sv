@@ -1,4 +1,77 @@
 // -----------------------------------------------------------------------------
+// Reusable CPU pipeline control units.
+// These modules are instantiated by riscv_pipeline and directly targeted by
+// the SymbiYosys formal harness under formal/.
+// -----------------------------------------------------------------------------
+module riscv_load_use_hazard_unit #(
+  parameter [6:0] OPCODE_R      = 7'b0110011,
+  parameter [6:0] OPCODE_I      = 7'b0010011,
+  parameter [6:0] OPCODE_LOAD   = 7'b0000011,
+  parameter [6:0] OPCODE_STORE  = 7'b0100011,
+  parameter [6:0] OPCODE_BRANCH = 7'b1100011,
+  parameter [6:0] OPCODE_JALR   = 7'b1100111
+) (
+  input  logic       id_ex_valid,
+  input  logic       id_ex_mem_read,
+  input  logic [4:0] id_ex_rd,
+  input  logic       if_id_valid,
+  input  logic [6:0] if_id_opcode,
+  input  logic [4:0] if_id_rs1,
+  input  logic [4:0] if_id_rs2,
+  output logic       stall
+);
+  always_comb begin
+    stall = 1'b0;
+    if (id_ex_valid && id_ex_mem_read && (id_ex_rd != 5'd0) && if_id_valid) begin
+      unique case (if_id_opcode)
+        OPCODE_R, OPCODE_STORE, OPCODE_BRANCH:
+          stall = (if_id_rs1 == id_ex_rd) || (if_id_rs2 == id_ex_rd);
+        OPCODE_I, OPCODE_LOAD, OPCODE_JALR:
+          stall = (if_id_rs1 == id_ex_rd);
+        default:
+          stall = 1'b0;
+      endcase
+    end
+  end
+endmodule
+
+module riscv_forwarding_unit (
+  input  logic [4:0]  rs1,
+  input  logic [4:0]  rs2,
+  input  logic [31:0] rs1_base_value,
+  input  logic [31:0] rs2_base_value,
+  input  logic        mem_wb_valid,
+  input  logic        mem_wb_reg_we,
+  input  logic [4:0]  mem_wb_rd,
+  input  logic [31:0] mem_wb_wdata,
+  input  logic        ex_mem_valid,
+  input  logic        ex_mem_reg_we,
+  input  logic        ex_mem_mem_read,
+  input  logic [4:0]  ex_mem_rd,
+  input  logic [31:0] ex_mem_alu_result,
+  output logic [31:0] fwd_rs1_value,
+  output logic [31:0] fwd_rs2_value
+);
+  // Apply the older MEM/WB value first; a newer eligible EX/MEM value
+  // overrides it. x0 never forwards and loads wait for the MEM result.
+  always_comb begin
+    fwd_rs1_value = rs1_base_value;
+    fwd_rs2_value = rs2_base_value;
+
+    if (mem_wb_valid && mem_wb_reg_we && (mem_wb_rd != 5'd0)) begin
+      if (mem_wb_rd == rs1) fwd_rs1_value = mem_wb_wdata;
+      if (mem_wb_rd == rs2) fwd_rs2_value = mem_wb_wdata;
+    end
+
+    if (ex_mem_valid && ex_mem_reg_we && !ex_mem_mem_read &&
+        (ex_mem_rd != 5'd0)) begin
+      if (ex_mem_rd == rs1) fwd_rs1_value = ex_mem_alu_result;
+      if (ex_mem_rd == rs2) fwd_rs2_value = ex_mem_alu_result;
+    end
+  end
+endmodule
+
+// -----------------------------------------------------------------------------
 // 5-stage RV32I pipeline RTL for verification portfolio project
 // Stages: IF, ID, EX, MEM, WB
 // Notes:
@@ -181,42 +254,42 @@ module riscv_pipeline #(
 
   assign instr_f = imem[pc_q[31:2]];
 
-  // Load-use hazard: instruction in ID consumes rd being loaded in EX.
-  always_comb begin
-    stall = 1'b0;
-    if (id_ex_valid_q && id_ex_mem_read_q && (id_ex_rd_q != 5'd0) && if_id_valid_q) begin
-      unique case (dec_opcode)
-        OPCODE_R, OPCODE_STORE, OPCODE_BRANCH: begin
-          stall = ((dec_rs1 == id_ex_rd_q) || (dec_rs2 == id_ex_rd_q));
-        end
-        OPCODE_I, OPCODE_LOAD, OPCODE_JALR: begin
-          stall = (dec_rs1 == id_ex_rd_q);
-        end
-        default: stall = 1'b0;
-      endcase
-    end
-  end
+  // Reusable load-use interlock and forwarding units.
+  riscv_load_use_hazard_unit #(
+    .OPCODE_R(OPCODE_R),
+    .OPCODE_I(OPCODE_I),
+    .OPCODE_LOAD(OPCODE_LOAD),
+    .OPCODE_STORE(OPCODE_STORE),
+    .OPCODE_BRANCH(OPCODE_BRANCH),
+    .OPCODE_JALR(OPCODE_JALR)
+  ) u_load_use_hazard (
+    .id_ex_valid(id_ex_valid_q),
+    .id_ex_mem_read(id_ex_mem_read_q),
+    .id_ex_rd(id_ex_rd_q),
+    .if_id_valid(if_id_valid_q),
+    .if_id_opcode(dec_opcode),
+    .if_id_rs1(dec_rs1),
+    .if_id_rs2(dec_rs2),
+    .stall(stall)
+  );
 
-  // Forwarding to EX stage. A load cannot be forwarded from EX/MEM before data memory.
-  // Priority is important: EX/MEM is newer than MEM/WB.  Seed 10 regression
-  // exposed a RAW case where both stages targeted the same source register;
-  // the older MEM/WB value must not overwrite the newer EX/MEM value.
-  always_comb begin
-    fwd_rs1_val = id_ex_rs1_val_q;
-    fwd_rs2_val = id_ex_rs2_val_q;
-
-    // Older producer first.
-    if (mem_wb_valid_q && mem_wb_reg_we_q && (mem_wb_rd_q != 5'd0)) begin
-      if (mem_wb_rd_q == id_ex_rs1_q) fwd_rs1_val = mem_wb_wdata_q;
-      if (mem_wb_rd_q == id_ex_rs2_q) fwd_rs2_val = mem_wb_wdata_q;
-    end
-
-    // Newer producer overrides MEM/WB when both match.
-    if (ex_mem_valid_q && ex_mem_reg_we_q && !ex_mem_mem_read_q && (ex_mem_rd_q != 5'd0)) begin
-      if (ex_mem_rd_q == id_ex_rs1_q) fwd_rs1_val = ex_mem_alu_result_q;
-      if (ex_mem_rd_q == id_ex_rs2_q) fwd_rs2_val = ex_mem_alu_result_q;
-    end
-  end
+  riscv_forwarding_unit u_forwarding (
+    .rs1(id_ex_rs1_q),
+    .rs2(id_ex_rs2_q),
+    .rs1_base_value(id_ex_rs1_val_q),
+    .rs2_base_value(id_ex_rs2_val_q),
+    .mem_wb_valid(mem_wb_valid_q),
+    .mem_wb_reg_we(mem_wb_reg_we_q),
+    .mem_wb_rd(mem_wb_rd_q),
+    .mem_wb_wdata(mem_wb_wdata_q),
+    .ex_mem_valid(ex_mem_valid_q),
+    .ex_mem_reg_we(ex_mem_reg_we_q),
+    .ex_mem_mem_read(ex_mem_mem_read_q),
+    .ex_mem_rd(ex_mem_rd_q),
+    .ex_mem_alu_result(ex_mem_alu_result_q),
+    .fwd_rs1_value(fwd_rs1_val),
+    .fwd_rs2_value(fwd_rs2_val)
+  );
 
   assign alu_in_a = id_ex_auipc_q ? id_ex_pc_q : fwd_rs1_val;
   assign alu_in_b = (id_ex_alu_src_imm_q || id_ex_lui_q || id_ex_auipc_q) ? id_ex_imm_q : fwd_rs2_val;
