@@ -222,44 +222,41 @@ qrun -batch -access=rw+/. -uvmhome uvm-1.2 \\
 
 The command assumes a QuestaSim installation with UVM 1.2 available. The seed list used for the recorded regression is in [`scripts/run_options.txt`](scripts/run_options.txt).
 
-## 8. Planned low-power architecture extensions
+## 8. Low-Power CPU Extension
 
-The following work is a **future development plan**. It is not implemented in the current RTL or included in the regression results above.
+The optional low_power/riscv_pipeline_lp.sv wrapper integrates a power controller around the existing five-stage CPU.
 
-### CPU operating-state controller
-- Define RUN, IDLE, SLEEP, and WAKEUP states.
-- Specify entry conditions, wake events, and state-preservation requirements.
-- Drain or safely quiesce the pipeline before entering a state that stops clock activity.
-- Define wake-up sequencing and measure wake-up latency.
+Implemented control behavior:
 
-### Safe clock-gating architecture
-- Add a glitch-safe clock-gating structure using an appropriate integrated clock-gating model or technology-compatible cell.
-- Prevent gating while pipeline state updates or memory operations are still pending.
-- Add assertions for clock-enable stability, pipeline state preservation, and restart behavior.
+- RUN, DRAIN, IDLE, SLEEP, and WAKEUP operating states.
+- Fetch quiescence during DRAIN so no new instructions enter while valid pipeline entries retire.
+- IDLE/SLEEP entry only after pipeline_empty and memory_idle are both asserted.
+- Latch-based integrated clock-gating simulation model for the CPU clock.
+- Retention-save / retention-restore request pulses and parameterized wake-up latency.
+- Instruction-memory preload is treated as a wake event so a gated core can be initialized.
 
-### Power and performance characterization
-- Run identical instruction workloads on baseline and low-power variants.
-- Collect active, idle, and gated-cycle counts, CPI, execution time, and wake-up latency.
-- Capture VCD/SAIF activity and compare normalized signal-toggle activity.
-- Report power in physical units only when supported by characterized cell/library data and a compatible power-analysis flow; otherwise report activity-based estimates or proxies with assumptions stated.
+Run the low-power integration test from the repository root:
 
-### Power-aware verification
-- Add tests for idle entry, sleep entry, wake-up, stalls, and outstanding operations.
-- Add power-state transition assertions.
-- If a compatible power-aware simulation flow is available, add UPF domains, isolation, retention, and Power State Table checks.
+```bash
+make -C low_power test
+```
 
-## 9. Current scope and limitations
+The original UVM baseline ties quiesce_req low and retains its existing clocking behavior. The optional wrapper is the low-power integration path.
+
+The ICG model must be replaced by a characterized library clock-gating cell for implementation. The memory_idle signal must be driven by the real memory/interconnect outstanding-transaction status. Retention outputs are control hooks; this repository does not instantiate retention flops, power switches, or UPF power intent.
+
+## 9. Current Scope and Limitations
 
 - Educational five-stage RV32I-subset RTL; not a complete ISA compliance implementation.
 - Internal word-oriented instruction/data memories; no external cache hierarchy or coherent interconnect.
-- No current implementation of clock gating, power gating, DVFS, retention, or UPF power intent.
+- The optional wrapper implements clock gating and power-state sequencing at the RTL control level; no power gating, DVFS, UPF domains, isolation cells, or retention cells are implemented.
 - No measured silicon power, characterized post-layout power, or quantified power reduction.
 - No documented synthesis/PPA, gate-level/SDF, formal-proof, or full-chip signoff result.
-- The public EDA Playground testbench uses a SystemVerilog reference model; C++ DPI-C integration is not included in this repository snapshot.
+- The public EDA Playground UVM testbench uses a SystemVerilog reference model; C++ DPI-C integration is not included in this repository snapshot.
 
 ## Project takeaway
 
-This project provides a five-stage CPU datapath and control implementation, explicit forwarding and load-use interlock behavior, branch/jump redirect handling, a UVM-based verification environment, assertion checks, and recorded multi-seed regression evidence. The next milestone is a separately measured low-power CPU extension—not a claim that power optimization is already present.
+This project provides a five-stage CPU datapath and control implementation, explicit forwarding and load-use interlock behavior, branch/jump redirect handling, a UVM-based verification environment, assertion checks, and recorded multi-seed regression evidence. The next milestones are UPF/retention-cell integration and library-based activity/power characterization; no physical power reduction is claimed by the current RTL extension.
 
 
 ## Low-Power CPU Architecture Extension
