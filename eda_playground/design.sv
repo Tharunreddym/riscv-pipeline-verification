@@ -386,7 +386,12 @@ module riscv_pipeline #(
             3'b010: id_ex_alu_op_d = ALU_SLT;  // SLTI
             3'b011: id_ex_alu_op_d = ALU_SLTU; // SLTIU
             3'b001: id_ex_alu_op_d = ALU_SLL;  // SLLI
-            3'b101: id_ex_alu_op_d = dec_funct7[5] ? ALU_SRA : ALU_SRL;
+            3'b101: begin
+              if (dec_funct7[5])
+                id_ex_alu_op_d = ALU_SRA;
+              else
+                id_ex_alu_op_d = ALU_SRL;
+            end
             default: id_ex_alu_op_d = ALU_ADD;
           endcase
         end
