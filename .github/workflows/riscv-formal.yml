@@ -53,6 +53,16 @@ jobs:
       - name: Cover data-memory scenarios
         run: sby -f formal/riscv_memory.sby cover
 
+      - name: Upload formal failure traces for diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-formal-debug-traces
+          path: |
+            formal/riscv_*_prove/engine_0/trace.vcd
+            formal/riscv_*_prove/engine_0/trace_tb.v
+          if-no-files-found: ignore
+
       - name: Inject forwarding-priority bug and require counterexample
         run: bash scripts/run_formal_negative_control.sh
 
