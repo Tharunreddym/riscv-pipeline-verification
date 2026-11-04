@@ -11,3 +11,9 @@ modelsim.ini
 # OS/editor
 .DS_Store
 .vscode/
+
+# SymbiYosys proof / cover work directories
+formal/riscv_hazard_prove/
+formal/riscv_hazard_cover/
+formal/riscv_forwarding_prove/
+formal/riscv_forwarding_cover/
