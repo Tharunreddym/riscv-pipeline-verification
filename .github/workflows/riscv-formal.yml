@@ -5,16 +5,18 @@ on:
     paths:
       - "eda_playground/design.sv"
       - "formal/**"
+      - "scripts/run_formal_negative_control.sh"
       - ".github/workflows/riscv-formal.yml"
   pull_request:
     paths:
       - "eda_playground/design.sv"
       - "formal/**"
+      - "scripts/run_formal_negative_control.sh"
       - ".github/workflows/riscv-formal.yml"
   workflow_dispatch:
 
 jobs:
-  formal-control-units:
+  formal-control-and-storage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +27,39 @@ jobs:
           yosys -V
           sby --version
           boolector --version
+
       - name: Prove load-use hazard logic
         run: sby -f formal/riscv_hazard.sby prove
       - name: Cover load-use hazard scenarios
         run: sby -f formal/riscv_hazard.sby cover
+
       - name: Prove forwarding priority
         run: sby -f formal/riscv_forwarding.sby prove
       - name: Cover forwarding scenarios
         run: sby -f formal/riscv_forwarding.sby cover
+
+      - name: Prove sequential fetch-control properties
+        run: sby -f formal/riscv_fetch_control.sby prove
+      - name: Cover fetch-control scenarios
+        run: sby -f formal/riscv_fetch_control.sby cover
+
+      - name: Prove register-file invariants
+        run: sby -f formal/riscv_regfile.sby prove
+      - name: Cover register-file scenarios
+        run: sby -f formal/riscv_regfile.sby cover
+
+      - name: Prove data-memory invariants
+        run: sby -f formal/riscv_memory.sby prove
+      - name: Cover data-memory scenarios
+        run: sby -f formal/riscv_memory.sby cover
+
+      - name: Inject forwarding-priority bug and require counterexample
+        run: bash scripts/run_formal_negative_control.sh
+
+      - name: Upload injected-bug counterexample
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: riscv-forwarding-priority-counterexample
+          path: formal/negative_control/artifacts/
+          if-no-files-found: error

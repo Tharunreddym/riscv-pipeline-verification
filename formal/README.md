@@ -1,30 +1,20 @@
-# RISC-V Pipeline Control — Formal Verification
+# RISC-V CPU Formal Verification
 
-This formal target proves the two combinational control units instantiated by the CPU RTL:
+This directory formal-checks reusable control/storage units that are instantiated by the actual five-stage CPU RTL. It does not claim full sequential proof of the complete processor.
 
-1. `riscv_load_use_hazard_unit`: determines when the IF/ID instruction must stall behind a load in ID/EX.
-2. `riscv_forwarding_unit`: selects the newest eligible operand producer, excludes x0, and does not forward a load from EX/MEM before its data is available.
+## Current proof targets
 
-The units are defined in `eda_playground/design.sv` and instantiated by `riscv_pipeline`. The formal harness targets those same module definitions rather than a separately reimplemented example.
+| Harness | RTL unit | Properties |
+|---|---|---|
+| `riscv_hazard.sby` | Load-use interlock | Exact stall decode for source dependencies; valid load and consumer qualification; x0 exclusion |
+| `riscv_forwarding.sby` | Forwarding priority | EX/MEM over MEM/WB; x0 suppression; no premature forwarding of load results |
+| `riscv_fetch_control.sby` | PC / IF-ID next-state control | Stall stability; branch redirect/flush priority; normal fetch; quiesce behavior |
+| `riscv_regfile.sby` | Architectural register file | x0 remains zero; nonzero writes are observable through read ports |
+| `riscv_memory.sby` | Word-addressed data memory | Write/read consistency; byte-offset alias within a word; stability when no write targets the read word |
 
-## Properties checked
+The fetch-control, register-file, and data-memory modules are instantiated by `riscv_pipeline`. The formal harnesses model their sequential state and prove the module properties under symbolic inputs.
 
-### Load-use hazard unit
-
-- Stall behavior for R-type, store, branch, I-type, load, and JALR source dependencies.
-- No stall without a valid load producer, valid consumer, or nonzero destination register.
-- Two-source consumers are checked on rs1 and rs2; one-source consumers are checked on rs1.
-
-### Forwarding unit
-
-- Both forwarded outputs select the newest eligible producer or the register-file/base value.
-- EX/MEM wins over MEM/WB when both target the same source register.
-- EX/MEM load results are not forwarded prematurely.
-- x0 is not treated as a producer.
-
-The harness includes cover targets for dependency, priority, load-interlock, and x0 corner cases.
-
-## Run locally
+## Run all positive proofs and covers
 
 Install Yosys, SymbiYosys (SBY), and Boolector through the OSS CAD Suite, then run:
 
@@ -33,8 +23,32 @@ sby -f formal/riscv_hazard.sby prove
 sby -f formal/riscv_hazard.sby cover
 sby -f formal/riscv_forwarding.sby prove
 sby -f formal/riscv_forwarding.sby cover
+sby -f formal/riscv_fetch_control.sby prove
+sby -f formal/riscv_fetch_control.sby cover
+sby -f formal/riscv_regfile.sby prove
+sby -f formal/riscv_regfile.sby cover
+sby -f formal/riscv_memory.sby prove
+sby -f formal/riscv_memory.sby cover
 ```
 
-## Scope
+## Counterexample-driven negative control
 
-These are formal checks of the combinational load-use and forwarding units as instantiated by the CPU. They are not a full sequential proof of the five-stage processor, ISA compliance proof, or memory-system proof. The existing UVM simulation regression remains a separate validation layer.
+`formal/negative_control/` contains an intentionally broken forwarding implementation where the older MEM/WB assignment overrides a newer EX/MEM producer. It is not instantiated by the CPU.
+
+Run:
+
+```bash
+bash scripts/run_formal_negative_control.sh
+```
+
+The script expects SBY to fail the buggy proof, requires a generated VCD counterexample, and copies it to `formal/negative_control/artifacts/forwarding_priority_counterexample.vcd`. This expected failure is treated as a successful negative-control test. The production forwarding unit remains youngest-producer-first and is separately proven by `riscv_forwarding.sby`.
+
+## Scope and limitations
+
+- Proofs cover the combinational hazard and forwarding units, plus bounded-sequential state properties for fetch control, register file, and data memory.
+- Fetch-control checks use unconstrained symbolic stall, branch, quiesce, redirect and instruction inputs; they do not prove the branch comparator or full pipeline interaction.
+- Register-file proof checks x0 protection and write/read behavior of the extracted architectural register file.
+- Memory proof is parameterized to four words and proves address-index behavior and read/write consistency for that scope.
+- These are not a full sequential proof of the whole five-stage CPU, full RV32I compliance, external memory protocol, or silicon signoff.
+
+GitHub Actions runs all positive proofs and covers, then the negative-control test and uploads the failing trace as an artifact.

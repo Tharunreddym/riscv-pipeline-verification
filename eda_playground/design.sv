@@ -1,4 +1,122 @@
 // -----------------------------------------------------------------------------
+// Fetch / pipeline-control next-state unit. Instantiated by riscv_pipeline and
+// sequentially checked by formal/riscv_fetch_control.sby.
+// -----------------------------------------------------------------------------
+module riscv_fetch_control_unit #(
+  parameter [31:0] NOP = 32'h0000_0013
+) (
+  input  logic [31:0] pc_current,
+  input  logic [31:0] instr_fetch,
+  input  logic        stall,
+  input  logic        branch_taken,
+  input  logic [31:0] branch_target,
+  input  logic        quiesce_req,
+  input  logic        if_id_valid_current,
+  input  logic [31:0] if_id_pc_current,
+  input  logic [31:0] if_id_instr_current,
+  output logic [31:0] pc_next,
+  output logic        if_id_valid_next,
+  output logic [31:0] if_id_pc_next,
+  output logic [31:0] if_id_instr_next
+);
+  always_comb begin
+    pc_next = pc_current;
+    if (branch_taken)
+      pc_next = branch_target;
+    else if (!stall)
+      pc_next = pc_current + 32'd4;
+
+    if_id_valid_next = if_id_valid_current;
+    if_id_pc_next = if_id_pc_current;
+    if_id_instr_next = if_id_instr_current;
+
+    if (branch_taken) begin
+      if_id_valid_next = 1'b0;
+      if_id_pc_next = 32'h0;
+      if_id_instr_next = NOP;
+    end else if (!stall) begin
+      if_id_valid_next = !quiesce_req;
+      if_id_pc_next = pc_current;
+      if_id_instr_next = quiesce_req ? NOP : instr_fetch;
+    end
+  end
+endmodule
+
+// -----------------------------------------------------------------------------
+// Architectural register file. x0 is hardwired to zero and cannot be written.
+// This exact module is instantiated by riscv_pipeline and formally checked.
+// -----------------------------------------------------------------------------
+module riscv_register_file #(
+  parameter integer DATA_WIDTH = 32,
+  parameter integer ADDR_WIDTH = 5
+) (
+  input  logic                  clk,
+  input  logic                  rst_n,
+  input  logic                  wr_en,
+  input  logic [ADDR_WIDTH-1:0] wr_addr,
+  input  logic [DATA_WIDTH-1:0] wr_data,
+  input  logic [ADDR_WIDTH-1:0] rs1_addr,
+  input  logic [ADDR_WIDTH-1:0] rs2_addr,
+  output logic [DATA_WIDTH-1:0] rs1_data,
+  output logic [DATA_WIDTH-1:0] rs2_data,
+  output logic [DATA_WIDTH-1:0] x0_value
+);
+  logic [DATA_WIDTH-1:0] regs [0:(1 << ADDR_WIDTH)-1];
+  integer rf_i;
+
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      for (rf_i = 0; rf_i < (1 << ADDR_WIDTH); rf_i = rf_i + 1)
+        regs[rf_i] <= '0;
+    end else begin
+      if (wr_en && (wr_addr != '0))
+        regs[wr_addr] <= wr_data;
+      regs[0] <= '0;
+    end
+  end
+
+  assign rs1_data = (rs1_addr == '0) ? '0 : regs[rs1_addr];
+  assign rs2_data = (rs2_addr == '0) ? '0 : regs[rs2_addr];
+  assign x0_value = regs[0];
+endmodule
+
+// -----------------------------------------------------------------------------
+// Word-addressed CPU data memory. Byte address bits [1:0] are ignored, matching
+// the original CPU RTL. Out-of-range reads return X and writes are discarded.
+// -----------------------------------------------------------------------------
+module riscv_data_memory #(
+  parameter integer DEPTH = 1024,
+  parameter integer WORD_INDEX_WIDTH = (DEPTH <= 2) ? 1 : $clog2(DEPTH)
+) (
+  input  logic        clk,
+  input  logic        rst_n,
+  input  logic        wr_en,
+  input  logic [31:0] wr_addr,
+  input  logic [31:0] wr_data,
+  input  logic [31:0] rd_addr,
+  output logic [31:0] rd_data
+);
+  logic [31:0] words [0:DEPTH-1];
+  integer mem_i;
+
+  initial begin
+    for (mem_i = 0; mem_i < DEPTH; mem_i = mem_i + 1)
+      words[mem_i] = 32'h0;
+  end
+
+  always @(posedge clk) begin
+    if (rst_n && wr_en && (wr_addr[31:2] < DEPTH))
+      words[wr_addr[WORD_INDEX_WIDTH+1:2]] <= wr_data;
+  end
+
+  always_comb begin
+    rd_data = 32'hxxxx_xxxx;
+    if (rd_addr[31:2] < DEPTH)
+      rd_data = words[rd_addr[WORD_INDEX_WIDTH+1:2]];
+  end
+endmodule
+
+// -----------------------------------------------------------------------------
 // Reusable CPU pipeline control units.
 // These modules are instantiated by riscv_pipeline and directly targeted by
 // the SymbiYosys formal harness under formal/.
@@ -141,17 +259,14 @@ module riscv_pipeline #(
   } alu_op_e;
 
   logic [31:0] imem [0:IMEM_WORDS-1];
-  logic [31:0] dmem [0:DMEM_WORDS-1];
-  logic [31:0] regs [0:31];
+  logic [31:0] rf_rs1_data, rf_rs2_data, rf_x0_value;
+  logic [31:0] dmem_rdata;
 
   // Initialize memories for deterministic simulation.
   // Unused instruction memory locations are NOPs so the core does not fetch X values.
   initial begin
     for (int init_i = 0; init_i < IMEM_WORDS; init_i++) begin
       imem[init_i] = NOP;
-    end
-    for (int init_j = 0; init_j < DMEM_WORDS; init_j++) begin
-      dmem[init_j] = 32'h0;
     end
   end
 
@@ -343,33 +458,23 @@ module riscv_pipeline #(
 
   assign branch_taken = branch_taken_ex;
 
-  always_comb begin
-    pc_d = pc_q;
-    if (branch_taken_ex) begin
-      pc_d = branch_target_ex;
-    end else if (!stall) begin
-      pc_d = pc_q + 32'd4;
-    end
-  end
-
-  // IF/ID next state
-  always_comb begin
-    if_id_valid_d = if_id_valid_q;
-    if_id_pc_d    = if_id_pc_q;
-    if_id_instr_d = if_id_instr_q;
-
-    if (branch_taken_ex) begin
-      if_id_valid_d = 1'b0;
-      if_id_pc_d    = 32'h0;
-      if_id_instr_d = NOP;
-    end else if (!stall) begin
-      // Quiesce stops new fetches while allowing the current IF/ID entry
-      // to advance through the remaining pipeline stages.
-      if_id_valid_d = !quiesce_req;
-      if_id_pc_d    = pc_q;
-      if_id_instr_d = quiesce_req ? NOP : instr_f;
-    end
-  end
+  // PC redirect, stall hold, IF/ID flush and quiesce behavior are
+  // factored into a reusable unit with a sequential formal harness.
+  riscv_fetch_control_unit #(.NOP(NOP)) u_fetch_control (
+    .pc_current(pc_q),
+    .instr_fetch(instr_f),
+    .stall(stall),
+    .branch_taken(branch_taken_ex),
+    .branch_target(branch_target_ex),
+    .quiesce_req(quiesce_req),
+    .if_id_valid_current(if_id_valid_q),
+    .if_id_pc_current(if_id_pc_q),
+    .if_id_instr_current(if_id_instr_q),
+    .pc_next(pc_d),
+    .if_id_valid_next(if_id_valid_d),
+    .if_id_pc_next(if_id_pc_d),
+    .if_id_instr_next(if_id_instr_d)
+  );
 
   // Decode-stage operand bypass.
   // Besides normal EX-stage forwarding, preload ID/EX operand values with the
@@ -379,8 +484,8 @@ module riscv_pipeline #(
   assign id_ex_result_byp = id_ex_jump_q ? (id_ex_pc_q + 32'd4) : alu_result;
 
   always_comb begin
-    dec_rs1_val_byp = (dec_rs1 == 5'd0) ? 32'h0 : regs[dec_rs1];
-    dec_rs2_val_byp = (dec_rs2 == 5'd0) ? 32'h0 : regs[dec_rs2];
+    dec_rs1_val_byp = rf_rs1_data;
+    dec_rs2_val_byp = rf_rs2_data;
 
     if (wb_write_en && (mem_wb_rd_q != 5'd0)) begin
       if (mem_wb_rd_q == dec_rs1) dec_rs1_val_byp = wb_wdata;
@@ -552,7 +657,7 @@ module riscv_pipeline #(
     mem_wb_mem_wdata_d = ex_mem_rs2_val_q;
 
     if (ex_mem_mem_read_q) begin
-      mem_wb_wdata_d = dmem[ex_mem_alu_result_q[31:2]];
+      mem_wb_wdata_d = dmem_rdata;
     end else begin
       mem_wb_wdata_d = ex_mem_alu_result_q;
     end
@@ -561,8 +666,30 @@ module riscv_pipeline #(
   assign wb_write_en = mem_wb_valid_q && mem_wb_reg_we_q && (mem_wb_rd_q != 5'd0);
   assign wb_wdata    = mem_wb_wdata_q;
 
+  riscv_register_file u_register_file (
+    .clk(clk),
+    .rst_n(rst_n),
+    .wr_en(wb_write_en),
+    .wr_addr(mem_wb_rd_q),
+    .wr_data(wb_wdata),
+    .rs1_addr(dec_rs1),
+    .rs2_addr(dec_rs2),
+    .rs1_data(rf_rs1_data),
+    .rs2_data(rf_rs2_data),
+    .x0_value(rf_x0_value)
+  );
+
+  riscv_data_memory #(.DEPTH(DMEM_WORDS)) u_data_memory (
+    .clk(clk),
+    .rst_n(rst_n),
+    .wr_en(ex_mem_valid_q && ex_mem_mem_write_q),
+    .wr_addr(ex_mem_alu_result_q),
+    .wr_data(ex_mem_rs2_val_q),
+    .rd_addr(ex_mem_alu_result_q),
+    .rd_data(dmem_rdata)
+  );
+
   // Sequential state
-  integer i;
   // Questa enforces single-driver rules on always_ff variables.
   // This educational EDA Playground version keeps memory initialization in an
   // initial block and program/data writes in this clocked block, so use a
@@ -623,22 +750,10 @@ module riscv_pipeline #(
       mem_wb_mem_addr_q  <= 32'h0;
       mem_wb_mem_wdata_q <= 32'h0;
 
-      for (i = 0; i < 32; i++) begin
-        regs[i] <= 32'h0;
-      end
     end else begin
       if (instr_load_en) begin
         imem[instr_load_addr[31:2]] <= instr_load_data;
       end
-
-      if (ex_mem_valid_q && ex_mem_mem_write_q) begin
-        dmem[ex_mem_alu_result_q[31:2]] <= ex_mem_rs2_val_q;
-      end
-
-      if (wb_write_en) begin
-        regs[mem_wb_rd_q] <= wb_wdata;
-      end
-      regs[0] <= 32'h0;
 
       pc_q <= pc_d;
 

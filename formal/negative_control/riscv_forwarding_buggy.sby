@@ -1,0 +1,17 @@
+[tasks]
+prove
+
+[options]
+prove: mode prove
+multiclock on
+
+[engines]
+smtbmc boolector
+
+[script]
+read_verilog -formal -sv riscv_forwarding_buggy.sv riscv_forwarding_buggy_formal.sv
+prep -top riscv_forwarding_buggy_formal
+
+[files]
+riscv_forwarding_buggy.sv formal/negative_control/riscv_forwarding_buggy.sv
+riscv_forwarding_buggy_formal.sv formal/negative_control/riscv_forwarding_buggy_formal.sv

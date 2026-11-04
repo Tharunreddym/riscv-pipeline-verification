@@ -280,3 +280,15 @@ sby -f formal/riscv_forwarding.sby cover
 ```
 
 These are formal checks of the two combinational pipeline-control units. They are not a full sequential proof of the complete CPU, ISA compliance, or memory-system correctness. The existing UVM simulation regression remains a separate validation layer. GitHub Actions runs the proof and cover tasks on changes to the RTL or formal harness.
+
+
+## Extended Formal Verification
+
+The formal suite now additionally checks:
+- Sequential PC/IF-ID behavior for stall hold, branch redirect and flush, and quiesce fetch suppression.
+- Register-file x0 hardwiring and write/read consistency.
+- Four-word data-memory write/read consistency, word alignment behavior and read stability.
+
+These checks target reusable units instantiated by the CPU RTL. They do not constitute a full sequential proof of the complete CPU.
+
+The GitHub Actions workflow also runs an intentional negative-control experiment: a copied forwarding unit with reversed producer priority must fail formal proof and emit a VCD counterexample. The fixed production forwarding unit is proven separately. The trace is uploaded as a workflow artifact.
