@@ -16,5 +16,5 @@ read_verilog -formal -sv design.sv riscv_control_formal.sv
 prep -top riscv_forwarding_formal
 
 [files]
-../eda_playground/design.sv
-riscv_control_formal.sv
+design.sv eda_playground/design.sv
+riscv_control_formal.sv formal/riscv_control_formal.sv
