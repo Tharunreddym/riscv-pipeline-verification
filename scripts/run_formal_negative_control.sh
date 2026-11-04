@@ -19,9 +19,9 @@ if [[ "$sby_rc" -eq 0 ]]; then
   exit 1
 fi
 
-TRACE_FILE="$(find "$WORK_DIR" -type f -name 'trace0.vcd' -print -quit)"
+TRACE_FILE="$(find "$WORK_DIR" -type f \\( -name 'trace.vcd' -o -name 'trace0.vcd' \\) -print -quit)"
 if [[ -z "$TRACE_FILE" ]]; then
-  echo "ERROR: formal run failed but no trace0.vcd counterexample was produced."
+  echo "ERROR: formal run failed but no VCD counterexample trace was produced."
   exit 1
 fi
 
