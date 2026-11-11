@@ -18,7 +18,7 @@ An educational SystemVerilog RTL implementation of a 32-bit, five-stage, in-orde
 | RTL | SystemVerilog |
 | Verification | UVM, SVA, functional coverage, architectural scoreboard |
 | Simulator | QuestaSim / EDA Playground |
-| Regression evidence | 20/20 seeds passed; 800 committed instructions checked; 0 scoreboard mismatches |
+| Historical regression evidence | 20/20 seeds passed; 800 committed instructions checked; 0 scoreboard mismatches |
 
 ## 1. CPU microarchitecture
 
@@ -152,6 +152,33 @@ Coverage is the functional instruction coverage collected by the testbench. Thes
 
 Per-seed results are available in [`reports/regression_results.csv`](reports/regression_results.csv) and [`docs/REGRESSION_EVIDENCE.md`](docs/REGRESSION_EVIDENCE.md).
 
+## Extended regression profile — configured target (pending execution)
+
+The constrained-random test now defaults to **1,000 instructions per seed**. The `+random_count=<N>` plusarg can override this value. The test waits for the scoreboard to check the requested number of committed, non-NOP instructions and reports a fatal error if it cannot reach the count within the watchdog window. Random source/destination register constraints now exercise the full architectural register range (`x0–x31`); load/store addresses remain aligned and within the internal data-memory range.
+
+The historical 20-seed run below remains the only verified baseline. The expanded profile is a target and must be executed in QuestaSim before its results are reported.
+
+| Metric | Current verified result | Extended target |
+|---|---:|---:|
+| Random seeds | 20 | 50 |
+| Instructions per seed | 40 | 1,000 |
+| Total committed instructions | 800 | 50,000 |
+| Scoreboard mismatches | 0 | 0 |
+| UVM errors/fatals | 0 | 0 |
+| Functional coverage | 55.73–59.51% | 70–80% target |
+
+The 70–80% functional-coverage figure is a goal, not a measured result. Longer stimulus and full-register randomization should improve register-bin exercise, but the actual percentage must come from the QuestaSim coverage report. The historical regression CSV and evidence document are intentionally preserved until all 50 extended runs complete.
+
+Run one extended seed from the `eda_playground` directory:
+
+```bash
+qrun -batch -access=rw+/. -uvmhome uvm-1.2 \
+  -timescale 1ns/1ns -mfcu design.sv testbench.sv \
+  +UVM_TESTNAME=random_instruction_test +random_count=1000 -sv_seed 1 \
+  -do "run -all; exit"
+```
+
+The 50 seed invocations are listed in [`scripts/run_options.txt`](scripts/run_options.txt). The checked-in [`reports/regression_results.csv`](reports/regression_results.csv) and [`docs/REGRESSION_EVIDENCE.md`](docs/REGRESSION_EVIDENCE.md) retain the historical 20-seed results until the expanded regression is actually run.
 ## 5. Debug case study: youngest-writer forwarding
 
 Constrained-random seed 10 exposed a RAW dependency corner case involving consecutive writes to the same destination register followed by an immediate consumer.
