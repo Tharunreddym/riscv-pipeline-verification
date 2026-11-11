@@ -297,8 +297,7 @@ class riscv_driver extends uvm_driver #(riscv_seq_item);
   endtask
 
   task run_phase(uvm_phase phase);
-    riscv_seq_item item;
-    instr_count = 0;
+    riscv_seq_item item;    instr_count = 0;
     reset_dut();
 
     forever begin
@@ -597,8 +596,7 @@ class riscv_scoreboard extends uvm_component;
     if (exp_reg_we && exp_rd != 0) begin
       regs[exp_rd] = exp_wdata;
     end
-    regs[0] = 32'h0;
-    model_pc = exp_next_pc;
+    regs[0] = 32'h0;    model_pc = exp_next_pc;
   endfunction
 
   function void report_phase(uvm_phase phase);
@@ -734,7 +732,7 @@ endclass
 class riscv_base_sequence extends uvm_sequence #(riscv_seq_item);
   `uvm_object_utils(riscv_base_sequence)
 
-  int unsigned count = 40;
+  int unsigned count = 1000;
 
   function new(string name = "riscv_base_sequence");
     super.new(name);
@@ -839,9 +837,9 @@ class random_instruction_sequence extends riscv_base_sequence;
       start_item(item);
       if (!item.randomize() with {
         instr_type inside {R_TYPE, I_TYPE, LOAD_TYPE, STORE_TYPE};
-        rd  inside {[1:15]};
-        rs1 inside {[0:15]};
-        rs2 inside {[0:15]};
+        rd  inside {[1:31]};
+        rs1 inside {[0:31]};
+        rs2 inside {[0:31]};
 
         // Loads/stores use x0 as base plus a small aligned positive offset.
         // This prevents out-of-range data-memory reads from producing X values.
@@ -897,8 +895,7 @@ class base_test extends uvm_test;
   endtask
 endclass
 
-// -----------------------------------------------------------------------------
-// Hazard-focused test
+// -----------------------------------------------------------------------------// Hazard-focused test
 // -----------------------------------------------------------------------------
 class hazard_test extends base_test;
   `uvm_component_utils(hazard_test)
@@ -953,10 +950,22 @@ class random_instruction_test extends base_test;
     random_instruction_sequence seq;
     phase.raise_objection(this);
     seq = random_instruction_sequence::type_id::create("seq");
+    int unsigned drain_cycles;
+    int unsigned drain_limit;
     void'(uvm_config_db#(int unsigned)::get(this, "", "random_count", seq.count));
+    void'($value$plusargs("random_count=%d", seq.count));
+    if (seq.count == 0) `uvm_fatal("RANDOM_COUNT", "random_count must be greater than zero")
     seq.start(env.agent.sequencer);
     wait (vif.rst_n === 1'b1);
-    repeat (600) @(posedge vif.clk);
+    drain_cycles = 0;
+    drain_limit  = (seq.count * 2) + 1000;
+    while ((env.scoreboard.checked_count < seq.count) && (drain_cycles < drain_limit)) begin
+      @(posedge vif.clk);
+      drain_cycles++;
+    end
+    if (env.scoreboard.checked_count < seq.count)
+      `uvm_fatal("INCOMPLETE_REGRESSION", $sformatf("Expected %0d committed instructions, checked %0d", seq.count, env.scoreboard.checked_count))
+    `uvm_info("TEST", $sformatf("Completed %0d committed instructions in %0d drain cycles", env.scoreboard.checked_count, drain_cycles), UVM_LOW)
     phase.drop_objection(this);
   endtask
 endclass
@@ -1022,9 +1031,17 @@ module tb_top;
     rif.instr_load_addr = '0;
     rif.instr_load_data = 32'h0000_0013;
 
-    // Keep reset active long enough for the UVM driver to preload the program.
-    // The RTL in design.sv allows instruction-memory writes during reset.
-    repeat (120) @(posedge clk);
+    // Hold reset until the random program has been completely preloaded.
+    // Each instruction load takes two clock edges; include margin before release.
+    int unsigned preload_count;
+    string selected_test;
+    if (!$value$plusargs("UVM_TESTNAME=%s", selected_test)) selected_test = "";
+    if (selected_test == "random_instruction_test") begin
+      if (!$value$plusargs("random_count=%d", preload_count)) preload_count = 1000;
+      repeat ((2 * preload_count) + 200) @(posedge clk);
+    end else begin
+      repeat (120) @(posedge clk);
+    end
     rif.rst_n = 1'b1;
   end
 
