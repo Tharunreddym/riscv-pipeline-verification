@@ -948,10 +948,10 @@ class random_instruction_test extends base_test;
 
   task run_phase(uvm_phase phase);
     random_instruction_sequence seq;
-    phase.raise_objection(this);
-    seq = random_instruction_sequence::type_id::create("seq");
     int unsigned drain_cycles;
     int unsigned drain_limit;
+    phase.raise_objection(this);
+    seq = random_instruction_sequence::type_id::create("seq");
     void'(uvm_config_db#(int unsigned)::get(this, "", "random_count", seq.count));
     void'($value$plusargs("random_count=%d", seq.count));
     if (seq.count == 0) `uvm_fatal("RANDOM_COUNT", "random_count must be greater than zero")
@@ -1026,6 +1026,8 @@ module tb_top;
   );
 
   initial begin
+    int unsigned preload_count;
+    string selected_test;
     rif.rst_n           = 1'b0;
     rif.instr_load_en   = 1'b0;
     rif.instr_load_addr = '0;
@@ -1033,8 +1035,6 @@ module tb_top;
 
     // Hold reset until the random program has been completely preloaded.
     // Each instruction load takes two clock edges; include margin before release.
-    int unsigned preload_count;
-    string selected_test;
     if (!$value$plusargs("UVM_TESTNAME=%s", selected_test)) selected_test = "";
     if (selected_test == "random_instruction_test") begin
       if (!$value$plusargs("random_count=%d", preload_count)) preload_count = 1000;
